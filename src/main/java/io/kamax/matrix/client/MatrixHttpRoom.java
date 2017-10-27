@@ -24,7 +24,9 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import io.kamax.matrix.MatrixErrorInfo;
 import io.kamax.matrix.MatrixID;
+import io.kamax.matrix._MatrixContent;
 import io.kamax.matrix._MatrixID;
+import io.kamax.matrix._MatrixUser;
 import io.kamax.matrix.hs._MatrixRoom;
 import io.kamax.matrix.json.RoomMessageFormattedTextPutBody;
 import io.kamax.matrix.json.RoomMessageTextPutBody;
@@ -40,6 +42,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.List;
@@ -259,7 +262,7 @@ public class MatrixHttpRoom extends AMatrixHttpClient implements _MatrixRoom {
     }
 
     @Override
-    public List<_MatrixID> getJoinedUsers() {
+    public List<_MatrixUser> getJoinedUsers() {
         try {
             URI path = getClientPath("/rooms/{roomId}/joined_members");
 
@@ -277,12 +280,28 @@ public class MatrixHttpRoom extends AMatrixHttpClient implements _MatrixRoom {
                 }
 
                 JsonObject joinedUsers = jsonParser.parse(body).getAsJsonObject().get("joined").getAsJsonObject();
-                List<_MatrixID> ids = new ArrayList<>();
+                List<_MatrixUser> users = new ArrayList<>();
                 for (Map.Entry<String, JsonElement> entry : joinedUsers.entrySet()) {
-                    ids.add(new MatrixID(entry.getKey()));
+                    String name = null;
+                    _MatrixContent avatar = null;
+                    if (entry.getValue().isJsonObject()) {
+                        JsonObject content = entry.getValue().getAsJsonObject();
+                        if (content.has("display_name") && content.get("display_name").isJsonPrimitive()) {
+                            name = content.get("display_name").getAsString();
+                        }
+                        if (content.has("avatar_url") && content.get("avatar_url").isJsonPrimitive()) {
+                            String uriRaw = content.get("avatar_url").getAsString();
+                            try {
+                                avatar = new MatrixHttpContent(context, new URI(uriRaw));
+                            } catch (URISyntaxException e) {
+                                log.warn("{} is not a valid URI for avatar, ignoring avatar", uriRaw);
+                            }
+                        }
+                    }
+                    users.add(new MatrixRoomUser(context, new MatrixID(entry.getKey()), name, avatar));
                 }
 
-                return ids;
+                return users;
             }
         } catch (IOException e) {
             throw new MatrixClientRequestException(e);
